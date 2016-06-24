@@ -1,28 +1,30 @@
 #!/usr/bin/python
-
 # Name: genExcelByLocalityIds.py
 # Author: [Govindrao Kulkarni]
-# Description: Generate 'Keywords' and 'Ads' Excel Sheets using locality ids
-# Prerequisite: Install xlrd and xlsxwriter libraires
-#               Edit the config, inputFilePath: excel sheet with list of localityIds
-#                                performCountCheck: if True, will include adGroup row if listing count is > 5
+# Date: 24 June, 2016
+# Description: Generate 'Keywords' and 'Ads' Excel WorkSheets for
+# Marketing Team
 
 import xlrd
 import xlsxwriter
 import requests
 import json
+import ConfigParser
+import progressbar as pb
 
-config = {
-    'inputFilePath': "/home/govind/work/myExps/pythonScripts/localityIds.xlsx",
-    'performCountCheck': False
-}
+config = ConfigParser.ConfigParser()
+config.read("config.cfg")
 
-keep_all_rows = config['performCountCheck']
-totalCountMap = {}
-bhk1CountMap = {}
-bhk2CountMap = {}
-bhk3CountMap = {}
-bhk4CountMap = {}
+keep_all_rows = config.get('controlVars', 'keepAllRows')
+inputFile = config.get('paths', 'inputFile')
+startRow = int(config.get('controlVars', 'startRow'))
+endRow = int(config.get('controlVars', 'endRow'))
+colNum = int(config.get('controlVars', 'colNum'))
+
+print 'Kepp All Rows: ', keep_all_rows
+
+locIdsList = []
+locIdDataMap = {}
 
 exceptionIdList = []
 
@@ -34,219 +36,263 @@ workbook = xlsxwriter.Workbook('marketing.xlsx')
 worksheet1 = workbook.add_worksheet('keywords')
 worksheet2 = workbook.add_worksheet('ads')
 
-def scriptInit():
-    locId_file = config['inputFilePath']
-    wb1 = xlrd.open_workbook(locId_file)
-    sheet1 = wb1.sheet_by_index(0)
-    if keep_all_rows == True:
-        fetchLocalityCountData()
-    for i in range(1, sheet1.nrows):
-        getLocalityLabels(int(sheet1.cell_value(i,0)))
-    print exceptionIdList
+_widgets=[pb.Bar('=', '[', ']'), ' ', pb.Percentage()]
+progress = pb.ProgressBar(widgets=_widgets, maxval = 500000).start()
+progvar = 0
+
+
+def exitScript():
+    global workbook
+    print 'Excel Sheet could not be generated for following locality Ids: ', exceptionIdList
     workbook.close()
 
-def  apiCaller(api):
+
+def parseLocalityIds():
+    global locIdsList
+    w1 = xlrd.open_workbook(inputFile)
+    w1_s1 = w1.sheet_by_index(0)
+    # can do some error checking
+    for i in range(startRow, endRow):
+        locId = int(w1_s1.cell_value(i, colNum))
+        locIdsList.append(locId)
+
+
+def insert(locId, key, count):
+    if locIdDataMap.has_key(locId):
+        locIdDataMap[locId][key] = count
+    else:
+        locIdDataMap[locId] = {}
+        locIdDataMap[locId][key] = count
+
+
+def apiCaller(api):
     print 'GET call: ', api
     res = requests.get(api)
     if res.status_code == requests.codes.ok:
-        return json.loads(res.content)
+        apiData = json.loads(res.content)
+        return apiData
     else:
         print 'ERROR in GET call: ', api
-        # If response code is not ok (200), print the resulting http error code with description
+        exitScript()
         res.raise_for_status()
         return None
 
-def fetchLocalityCountData():
-    apiList = {
-        'property_api' : 'http://proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        # 'apartment_api' : 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        # 'homes_api' : 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        # 'houses_api' : 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        # 'flats_api' : 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        'bhk2_api' : 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"equal":{"bedrooms":["2"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        'bhk3_api' : 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"equal":{"bedrooms":["3"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        'bhk4_api' : 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"equal":{"bedrooms":["4"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        'bhk1_api' : 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"equal":{"bedrooms":["1"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan'
-        # 'budget_property_api' : 'https://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        # 'affordable_property_api' : 'https://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
-        # 'builder_floor_api' : 'https://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan'
-    }
 
-    for key, val in enumerate(apiList):
-        apiData = apiCaller(apiList[val])
-        if apiData is not None:
-            createMap(apiData, val)
-
-def createMap(apiData, key):
-    if apiData.has_key('data') and apiData['data'].has_key('facets') and apiData['data']['facets'].has_key('localityId'):
-        locArr = apiData['data']['facets']['localityId']
-        if key == 'property_api' or key == 'apartment_api' or key == 'homes_api' or key == 'houses_api' or key == 'flats_api' or key == 'budget_property_api' or key == 'affordable_property_api' or key == 'builder_floor_api':
-            global totalCountMap
-            populateMapObj(locArr, totalCountMap)
-        elif key == 'bhk1_api':
-            global bhk1CountMap
-            populateMapObj(locArr, bhk1CountMap)
-        elif key == 'bhk2_api':
-            global bhk2CountMap
-            populateMapObj(locArr, bhk2CountMap)
-        elif key == 'bhk3_api':
-            global bhk3CountMap
-            populateMapObj(locArr, bhk3CountMap)
-        elif key == 'bhk4_api':
-            global bhk4CountMap
-            populateMapObj(locArr, bhk4CountMap)
-
-def populateMapObj(locArr, countIdMap):
-    for countObj in locArr:
-        for locId in countObj:
-            countIdMap[locId] = countObj[locId]
-
-def getLocalityLabels(locId):
-    print locId
-    url = 'https://www.proptiger.com/app/v2/locality/' + `locId` + '?selector={"fields":["localityId","suburb","city","label"]}&sourceDomain=Makaan'
+def populateLabelsInMap(url):
     apiData = apiCaller(url)
-    if apiData is not None:
-        if apiData.has_key('data') and apiData['data'] is not None and apiData['data'].has_key('label'):
-            localityLabel = apiData['data']['label']
-        else:
-            return exceptionIdList.append(locId)
-        if apiData.has_key('data') and apiData['data'] is not None and apiData['data'].has_key('suburb') and apiData['data']['suburb'].has_key('city') and apiData['data']['suburb']['city'].has_key('label'):
-            cityLabel = apiData['data']['suburb']['city']['label']
-        else:
-            return exceptionIdList.append(locId)
-        generateCurrLocalityContent(cityLabel, localityLabel, locId)
+    if apiData is not None and apiData.has_key('data'):
+        for labelObj in apiData['data']:
+            if labelObj.has_key('localityId'):
+                locId = str(labelObj['localityId'])
+            if labelObj.has_key('suburb') and labelObj['suburb'].has_key('city') and labelObj['suburb']['city'].has_key('label'):
+                cityLabel = labelObj['suburb']['city']['label']
+                insert(locId, 'cityLabel', cityLabel)
+            if labelObj.has_key('label'):
+                localityLabel = labelObj['label']
+                insert(locId, 'localityLabel', localityLabel)
+
+
+def populateBhkUrlsInMap(url):
+    apiData = apiCaller(url)
+    if apiData is not None and apiData.has_key('data'):
+        for key in apiData['data']:
+            bhkUrl = apiData['data'][key]
+            locId = key.replace('MAKAAN_LOCALITY_BHK_PROPERTY_BUY-', '')
+            insert(locId, 'bhkUrl', bhkUrl)
+
+
+def populateListingUrlsInMap(url):
+    apiData = apiCaller(url)
+    if apiData is not None and apiData.has_key('data'):
+        for key in apiData['data']:
+            listingUrl = apiData['data'][key]
+            locId = key.replace('MAKAAN_LOCALITY_LISTING_BUY-', '')
+            insert(locId, 'listingUrl', listingUrl)
+
+
+def gatherLocalityData():
+    apiList1 = {
+        'labels': 'https://www.proptiger.com/data/v1/entity/locality?selector={"filters":{"and":[{"equal":{"localityId":' + str(locIdsList) + '}}]},"paging":{"start":0,"rows":10000},"fields":["localityId","suburb","city","label"]}&sourceDomain=Makaan',
+        'bhkUrls': 'https://www.makaan.com/dawnstar/data/v2/fetch-urls?urlParam=[{"urlDomain":"locality","domainIds":' + str(locIdsList) + ',"urlCategoryName":"MAKAAN_LOCALITY_BHK_PROPERTY_BUY"}]',
+        'listingUrls': 'https://www.makaan.com/dawnstar/data/v2/fetch-urls?urlParam=[{"urlDomain":"locality","domainIds":' + str(locIdsList) + ',"urlCategoryName":"MAKAAN_LOCALITY_LISTING_BUY"}]'
+    }
+    populateLabelsInMap(apiList1['labels'])
+    populateBhkUrlsInMap(apiList1['bhkUrls'])
+    populateListingUrlsInMap(apiList1['listingUrls'])
+
+    if keep_all_rows:
+        apiList2 = {
+            'totalCount': 'http://proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
+            'bhk1Count': 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"equal":{"bedrooms":["1"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
+            'bhk2Count': 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"equal":{"bedrooms":["2"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
+            'bhk3Count': 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"equal":{"bedrooms":["3"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
+            'bhk4Count': 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"equal":{"bedrooms":["4"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan'
+        }
+        for key in apiList2:
+            apiData = apiCaller(apiList2[key])
+            if apiData.has_key('data') and apiData['data'].has_key('facets') and apiData['data']['facets'].has_key('localityId'):
+                locArr = apiData['data']['facets']['localityId']
+                for countObj in locArr:
+                    for locId in countObj:
+                        insert(locId, key, countObj[locId])
+
+
+def init():
+    parseLocalityIds()
+    gatherLocalityData()
+    for locId in locIdsList:
+        generateCurrLocalityContent(locId)
+    exitScript()
+
+
+def getCountFromMap(locId, key):
+    return locIdDataMap.has_key(locId) and locIdDataMap[locId].has_key(key) and locIdDataMap[locId][key] > 5
+
 
 def getToBeAddedData(locId, locLabel):
     return {
-            locLabel + ' ' + 'Property': keep_all_rows or (totalCountMap.has_key(`locId`) and totalCountMap[`locId`] > 5),
-            locLabel + ' ' + 'Apartments': keep_all_rows or (totalCountMap.has_key(`locId`) and totalCountMap[`locId`] > 5),
-            locLabel + ' ' + 'Homes': keep_all_rows or (totalCountMap.has_key(`locId`) and totalCountMap[`locId`] > 5),
-            locLabel + ' ' + 'House': keep_all_rows or (totalCountMap.has_key(`locId`) and totalCountMap[`locId`] > 5),
-            locLabel + ' ' + 'flats': keep_all_rows or (totalCountMap.has_key(`locId`) and totalCountMap[`locId`] > 5),
-            locLabel + ' ' + 'Builder Floors': keep_all_rows or (totalCountMap.has_key(`locId`) and totalCountMap[`locId`] > 5),
-            '1BHK' + ' ' + locLabel: keep_all_rows or (bhk1CountMap.has_key(`locId`) and bhk1CountMap[`locId`] > 5),
-            '2BHK' + ' ' + locLabel: keep_all_rows or (bhk2CountMap.has_key(`locId`) and bhk2CountMap[`locId`] > 5),
-            '3BHK' + ' ' + locLabel: keep_all_rows or (bhk3CountMap.has_key(`locId`) and bhk3CountMap[`locId`] > 5),
-            '4BHK' + ' ' + locLabel: keep_all_rows or (bhk4CountMap.has_key(`locId`) and bhk4CountMap[`locId`] > 5),
-            'Budget Proeprty' + ' ' + locLabel: keep_all_rows or (totalCountMap.has_key(`locId`) and totalCountMap[`locId`] > 5),
-            'Affordable Property' + ' ' + locLabel: keep_all_rows or (totalCountMap.has_key(`locId`) and totalCountMap[`locId`] > 5)
-        }
-
-def getLastColumnUrl(locId):
-    lastColUrls = {}
-    api1 = 'https://www.makaan.com/dawnstar/data/v2/fetch-urls?urlParam=[{"urlDomain":"locality","domainIds":[' + `locId` + '],"urlCategoryName":"MAKAAN_LOCALITY_BHK_PROPERTY_BUY"}]'
-    apiData = apiCaller(api1)
-    if apiData is not None:
-        if apiData.has_key('data') and apiData['data'] is not None and apiData['data'].has_key('MAKAAN_LOCALITY_BHK_PROPERTY_BUY-' + `locId`):
-            lastColUrls['propertyBhkUrl'] = 'https://www.makaan.com/' + apiData['data']['MAKAAN_LOCALITY_BHK_PROPERTY_BUY-' + `locId`]
-        else:
-            print 'error in fetching propertyBhkUrl for ', locId
-    api2 = 'https://www.makaan.com/dawnstar/data/v2/fetch-urls?urlParam=[{"urlDomain":"locality","domainIds":[' + `locId` + '],"urlCategoryName":"MAKAAN_LOCALITY_LISTING_BUY"}]'
-    apiData = apiCaller(api2)
-    if apiData is not None:
-        if apiData.has_key('data') and apiData['data'] is not None and apiData['data'].has_key('MAKAAN_LOCALITY_LISTING_BUY-' + `locId`):
-            lastColUrls['propertyUrl'] = 'https://www.makaan.com/' + apiData['data']['MAKAAN_LOCALITY_LISTING_BUY-' + `locId`]
-        else:
-            print 'error in fetching propertyUrl for ', locId
-    return lastColUrls
+        locLabel + ' ' + 'Property': keep_all_rows or getCountFromMap(),
+        locLabel + ' ' + 'Apartments': keep_all_rows or getCountFromMap(),
+        locLabel + ' ' + 'Homes': keep_all_rows or getCountFromMap(),
+        locLabel + ' ' + 'House': keep_all_rows or getCountFromMap(),
+        locLabel + ' ' + 'flats': keep_all_rows or getCountFromMap(),
+        locLabel + ' ' + 'Builder Floors': keep_all_rows or getCountFromMap(),
+        '1BHK' + ' ' + locLabel: keep_all_rows or getCountFromMap(),
+        '2BHK' + ' ' + locLabel: keep_all_rows or getCountFromMap(),
+        '3BHK' + ' ' + locLabel: keep_all_rows or getCountFromMap(),
+        '4BHK' + ' ' + locLabel: keep_all_rows or getCountFromMap(),
+        'Budget Proeprty' + ' ' + locLabel: keep_all_rows or getCountFromMap(),
+        'Affordable Property' + ' ' + locLabel: keep_all_rows or getCountFromMap()
+    }
 
 
-def populateAdsWorksheet(adgNum, adGroup, locLabel, campaign, locId, lcUrls):
+def populateAdsWorksheet(adgNum, adGroup, locLabel, campaign, locId):
     worksheet2.write(s2_rowNum, 0, campaign)
     if adgNum == 0:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' Property')
         worksheet2.write(s2_rowNum, 3, 'Huge Options in Multiple Budgets.')
         worksheet2.write(s2_rowNum, 4, 'Best Price only on Makaan.com')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "") + '_Property')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyUrl'])
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "") + '_Property')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId]['listingUrl'])
     elif adgNum == 1:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' Apartment')
         worksheet2.write(s2_rowNum, 3, 'Huge Options in Multiple Budgets.')
         worksheet2.write(s2_rowNum, 4, 'Best Price only on Makaan.com')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "") + '_Apts')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyUrl'])
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "") + '_Apts')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId]['listingUrl'])
     elif adgNum == 2:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' Home')
         worksheet2.write(s2_rowNum, 3, 'Huge Options in Multiple Budgets.')
         worksheet2.write(s2_rowNum, 4, 'Best Price only on Makaan.com')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "_") + '_Home')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyUrl'])
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "_") + '_Home')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId]['listingUrl'])
     elif adgNum == 3:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' House')
         worksheet2.write(s2_rowNum, 3, '100% Real & Verified Properties.')
         worksheet2.write(s2_rowNum, 4, 'Find by Location & Budget Now!')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "_") + '_House')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyUrl'])
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "_") + '_House')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId]['listingUrl'])
     elif adgNum == 4:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, 'Flats in ' + locLabel)
         worksheet2.write(s2_rowNum, 3, '100% Real & Verified Properties.')
         worksheet2.write(s2_rowNum, 4, 'Find by Location & Budget Now!')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/Flats_' + locLabel.replace(" ", "_"))
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyUrl'])
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/Flats_' +
+                         locLabel.replace(" ", "_"))
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId]['listingUrl'])
     elif adgNum == 5:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' Property')
         worksheet2.write(s2_rowNum, 3, 'Buy Builder Floor, Best Options.')
         worksheet2.write(s2_rowNum, 4, 'Best Price only on Makaan.com')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "") + '_Property')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyUrl'])
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "") + '_Property')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId]['listingUrl'])
     elif adgNum == 6:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' 1 BHK')
         worksheet2.write(s2_rowNum, 3, '100% Real & Verified Properties.')
         worksheet2.write(s2_rowNum, 4, 'Find by Location & Budget Now!')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "_") + '_1_BHK')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyBhkUrl'].replace('-bhk-','-1bhk-'))
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "_") + '_1_BHK')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId][
+                         'bhkUrl'].replace('-bhk-', '-1bhk-'))
     elif adgNum == 7:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' 2 BHK')
         worksheet2.write(s2_rowNum, 3, 'Huge Options in Multiple Budgets.')
         worksheet2.write(s2_rowNum, 4, 'Best Price only on Makaan.com')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "_") + '_2_BHK')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyBhkUrl'].replace('-bhk-','-2bhk-'))
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "_") + '_2_BHK')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId][
+                         'bhkUrl'].replace('-bhk-', '-2bhk-'))
     elif adgNum == 8:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' 2 BHK')
         worksheet2.write(s2_rowNum, 3, '100% Real & Verified Properties.')
         worksheet2.write(s2_rowNum, 4, 'Find by Location & Budget Now!')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "_") + '_3_BHK')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyBhkUrl'].replace('-bhk-','-3bhk-'))
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "_") + '_3_BHK')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId][
+                         'bhkUrl'].replace('-bhk-', '-3bhk-'))
     elif adgNum == 9:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' 4 BHK')
         worksheet2.write(s2_rowNum, 3, 'Huge Options in Multiple Budgets.')
         worksheet2.write(s2_rowNum, 4, 'Best Price only on Makaan.com')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "_") + '_4_BHK')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyBhkUrl'].replace('-bhk-','-4bhk-'))
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "_") + '_4_BHK')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId][
+                         'bhkUrl'].replace('-bhk-', '-4bhk-'))
     elif adgNum == 10:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' Property')
         worksheet2.write(s2_rowNum, 3, 'Property for Every Budget.')
         worksheet2.write(s2_rowNum, 4, 'Best Price only on Makaan.com')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "") + '_Property')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyUrl'])
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "") + '_Property')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId]['listingUrl'])
     elif adgNum == 11:
         worksheet2.write(s2_rowNum, 1, adGroup[adgNum])
         worksheet2.write(s2_rowNum, 2, locLabel + ' Property')
         worksheet2.write(s2_rowNum, 3, 'Wide Range of Affordable Properties')
         worksheet2.write(s2_rowNum, 4, 'Find by Location & Budget Now!')
-        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' + locLabel.replace(" ", "") + '_Property')
-        worksheet2.write(s2_rowNum, 6, lcUrls['propertyUrl'])
+        worksheet2.write(s2_rowNum, 5, 'Makaan.com/' +
+                         locLabel.replace(" ", "") + '_Property')
+        worksheet2.write(s2_rowNum, 6, locIdDataMap[locId]['listingUrl'])
 
 
-def generateCurrLocalityContent(cityLabel, locLabel, locId):
+def generateCurrLocalityContent(locId):
     global worksheet1
     global s1_rowNum
     global s2_rowNum
 
+    locId = str(locId)
+    print locIdDataMap[locId]
+    if locIdDataMap.has_key(locId) and locIdDataMap[locId].has_key('cityLabel'):
+        cityLabel = locIdDataMap[locId]['cityLabel']
+    else:
+        print 'Error, could not get cityLabel: ', locId
+        exceptionIdList.append(locId)
+        return
+    if locIdDataMap.has_key(locId) and locIdDataMap[locId].has_key('localityLabel'):
+        locLabel = locIdDataMap[locId]['localityLabel']
+    else:
+        print 'Error, could not get localityLabel: ', locId
+        exceptionIdList.append(locId)
+        return
+
     campaign = cityLabel + '-' + locLabel
     toBeAdded = getToBeAddedData(locId, locLabel)
-    print toBeAdded
+
     adGroup = [
         locLabel + ' ' + 'Property',
         locLabel + ' ' + 'Apartments',
@@ -408,11 +454,9 @@ def generateCurrLocalityContent(cityLabel, locLabel, locId):
         ]
     }
 
-    lcUrls = getLastColumnUrl(locId)
-
     for i, adg in enumerate(adGroup):
         if toBeAdded[adGroup[i]]:
-            populateAdsWorksheet(i, adGroup, locLabel, campaign, locId, lcUrls);
+            populateAdsWorksheet(i, adGroup, locLabel, campaign, locId)
             s2_rowNum = s2_rowNum + 1
             for keyString in keyWordsColumn[adGroup[i]]:
                 worksheet1.write(s1_rowNum, 0, campaign)
@@ -423,4 +467,8 @@ def generateCurrLocalityContent(cityLabel, locLabel, locId):
     s1_rowNum = s1_rowNum + 1
     s2_rowNum = s2_rowNum + 1
 
-scriptInit()
+
+for i in range(500000):
+    init()
+    progress.update(progvar + 1)
+    progvar += 1
