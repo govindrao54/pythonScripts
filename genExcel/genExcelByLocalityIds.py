@@ -10,7 +10,6 @@ import xlsxwriter
 import requests
 import json
 import ConfigParser
-import progressbar as pb
 
 config = ConfigParser.ConfigParser()
 config.read("config.cfg")
@@ -35,10 +34,6 @@ s2_rowNum = 0
 workbook = xlsxwriter.Workbook('marketing.xlsx')
 worksheet1 = workbook.add_worksheet('keywords')
 worksheet2 = workbook.add_worksheet('ads')
-
-_widgets=[pb.Bar('=', '[', ']'), ' ', pb.Percentage()]
-progress = pb.ProgressBar(widgets=_widgets, maxval = 500000).start()
-progvar = 0
 
 
 def exitScript():
@@ -137,7 +132,7 @@ def gatherLocalityData():
                         insert(locId, key, countObj[locId])
 
 
-def init():
+def initScript():
     parseLocalityIds()
     gatherLocalityData()
     for locId in locIdsList:
@@ -468,7 +463,4 @@ def generateCurrLocalityContent(locId):
     s2_rowNum = s2_rowNum + 1
 
 
-for i in range(500000):
-    init()
-    progress.update(progvar + 1)
-    progvar += 1
+initScript()
