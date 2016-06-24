@@ -26,6 +26,7 @@ locIdsList = []
 locIdDataMap = {}
 
 exceptionIdList = []
+wrongInput = []
 
 s1_rowNum = 0
 s2_rowNum = 0
@@ -38,7 +39,12 @@ worksheet2 = workbook.add_worksheet('ads')
 
 def exitScript():
     global workbook
-    print 'Excel Sheet could not be generated for following locality Ids: ', exceptionIdList
+    global exceptionIdList
+    global wrongInput
+    if exceptionIdList:
+        print 'Excel Sheet could not be generated for following locality Ids: ', exceptionIdList
+    if wrongInput:
+        print 'Wrong Input List: ', wrongInput
     workbook.close()
 
 
@@ -46,10 +52,13 @@ def parseLocalityIds():
     global locIdsList
     w1 = xlrd.open_workbook(inputFile)
     w1_s1 = w1.sheet_by_index(0)
-    # can do some error checking
     for i in range(startRow, endRow):
-        locId = int(w1_s1.cell_value(i, colNum))
-        locIdsList.append(locId)
+        val = locId = w1_s1.cell_value(i, colNum)
+        val = str(val).replace('.','')
+        if val.isdigit():
+            locIdsList.append(int(locId))
+        else:
+            wrongInput.append(locId)
 
 
 def insert(locId, key, count):
