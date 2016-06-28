@@ -52,7 +52,7 @@ def parseLocalityIds():
     global locIdsList
     w1 = xlrd.open_workbook(inputFile)
     w1_s1 = w1.sheet_by_index(0)
-    for i in range(startRow, endRow):
+    for i in range(startRow - 1, endRow):
         val = locId = w1_s1.cell_value(i, colNum)
         val = str(val).replace('.','')
         if val.isdigit():
