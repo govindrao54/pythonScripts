@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# Name: genExcelByLocalityIds.py
+# Name: genExcelNew.py
 # Author: [Govindrao Kulkarni]
 # Date: 30 June, 2016
 # Description: Generate 'Keywords' and 'Ads' Excel WorkSheets for
@@ -28,13 +28,14 @@ locIdDataMap = {}
 exceptionIdList = []
 wrongInput = []
 
-s1_rowNum = 0
-s2_rowNum = 0
+s1_rowNum = 1
+s2_rowNum = 1
 
 # Create a output workbook and add a worksheet.
 workbook = xlsxwriter.Workbook('marketing.xlsx')
 worksheet1 = workbook.add_worksheet('keywords')
 worksheet2 = workbook.add_worksheet('ads')
+bold = workbook.add_format({'bold': True})
 
 def addToExceptionList(locId):
     if locId not in exceptionIdList:
@@ -128,7 +129,7 @@ def gatherLocalityData():
     populateBhkUrlsInMap(apiList1['bhkUrls'])
     populateListingUrlsInMap(apiList1['listingUrls'])
 
-    if keep_all_rows:
+    if keep_all_rows == True:
         apiList2 = {
             'totalCount': 'http://proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
             'bhk1Count': 'http://www.proptiger.com/app/v1/listing?selector={"filters":{"and":[{"equal":{"listingCategory":["Primary","Resale"]}},{"equal":{"bedrooms":["1"]}},{"range":{"price":{"from":"0","to":"5000000"}}}]},"paging":{"start":0,"rows":0}}&facets=localityId&sourceDomain=Makaan',
@@ -876,35 +877,14 @@ def initScript():
     gatherLocalityData()
     kwColHeadings = ['Campaign','Ad' 'Group','KeyWords','Type']
     for idx, val in enumerate(kwColHeadings):
-        worksheet1.write(0, idx, val)
+        worksheet1.write(0, idx, val, bold)
     adColHeadings = ['Campaign','Ad Group','Title','D1','D2','Display URL','Final URL']
     for idx, val in enumerate(adColHeadings):
-        worksheet2.write(0, idx, val)
+        worksheet2.write(0, idx, val, bold)
     for locId in locIdsList:
         generateKeywordsContent(locId)
         genAdsContent(locId)
     exitScript()
-
-
-def getCountFromMap(locId, key):
-    return locIdDataMap.has_key(locId) and locIdDataMap[locId].has_key(key) and locIdDataMap[locId][key] > 5
-
-
-def getToBeAddedData(locId, locLabel):
-    return {
-        locLabel + ' ' + 'Property': keep_all_rows or getCountFromMap(locId, 'totalCount'),
-        locLabel + ' ' + 'Apartments': keep_all_rows or getCountFromMap(locId, 'totalCount'),
-        locLabel + ' ' + 'Homes': keep_all_rows or getCountFromMap(locId, 'totalCount'),
-        locLabel + ' ' + 'House': keep_all_rows or getCountFromMap(locId, 'totalCount'),
-        locLabel + ' ' + 'flats': keep_all_rows or getCountFromMap(locId, 'totalCount'),
-        locLabel + ' ' + 'Builder Floors': keep_all_rows or getCountFromMap(locId, 'totalCount'),
-        '1BHK' + ' ' + locLabel: keep_all_rows or getCountFromMap(locId,'bhk1Count'),
-        '2BHK' + ' ' + locLabel: keep_all_rows or getCountFromMap(locId,'bhk2Count'),
-        '3BHK' + ' ' + locLabel: keep_all_rows or getCountFromMap(locId,'bhk3Count'),
-        '4BHK' + ' ' + locLabel: keep_all_rows or getCountFromMap(locId,'bhk4Count'),
-        'Budget Proeprty' + ' ' + locLabel: keep_all_rows or getCountFromMap(locId, 'totalCount'),
-        'Affordable Property' + ' ' + locLabel: keep_all_rows or getCountFromMap(locId, 'totalCount')
-    }
 
 
 initScript()
